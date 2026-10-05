@@ -20,5 +20,23 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkwNYQ3MQ6e-bXrHc44IJw'
-      # Required for KRaft
       KAFKA_KRAFT_MODE: 'true'
+    networks:
+      - bess-network
+
+  bess-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bess-producer
+    depends_on:
+      - kafka
+    networks:
+      - bess-network
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    restart: unless-stopped
+
+networks:
+  bess-network:
+    driver: bridge
