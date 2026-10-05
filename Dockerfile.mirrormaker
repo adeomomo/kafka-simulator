@@ -1,10 +1,15 @@
 FROM confluentinc/cp-kafka:7.5.0
 
-# Copy configuration files
+WORKDIR /etc/kafka
+
 COPY mm2.properties /etc/kafka/mm2.properties
 COPY source-cluster.properties /etc/kafka/source-cluster.properties
 COPY target-cluster.properties /etc/kafka/target-cluster.properties
+COPY connect-log4j.properties /etc/kafka/connect-log4j.properties
 
-# Use the correct path to the MirrorMaker command (without .sh extension)
+# Point Kafka Connect to a valid log4j config
+ENV KAFKA_LOG4J_OPTS="-Dlog4j.configuration=file:/etc/kafka/connect-log4j.properties"
+
+# The actual MirrorMaker command
 ENTRYPOINT ["/usr/bin/connect-mirror-maker"]
 CMD ["/etc/kafka/mm2.properties"]
