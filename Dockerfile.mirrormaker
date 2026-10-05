@@ -1,0 +1,7 @@
+FROM confluentinc/cp-kafka:7.5.0
+
+COPY mm2.properties /etc/kafka/mm2.properties
+COPY source-cluster.properties /etc/kafka/source-cluster.properties
+COPY target-cluster.properties /etc/kafka/target-cluster.properties
+
+CMD ["connect-mirror-maker.sh", "/etc/kafka/mm2.properties"]
