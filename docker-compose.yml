@@ -29,7 +29,7 @@ services:
     hostname: kafka-2
     container_name: kafka-2
     ports:
-      - "9094:9092"
+      - "9094:9094"
       - "9095:9093"
     environment:
       KAFKA_NODE_ID: 2
@@ -38,7 +38,7 @@ services:
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONTROLLER_QUORUM_VOTERS: '2@kafka-2:9093'
-      KAFKA_LISTENERS: 'PLAINTEXT://kafka-2:29092,CONTROLLER://kafka-2:9093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka-2:29092,CONTROLLER://kafka-2:9093,PLAINTEXT_HOST://0.0.0.0:9094'
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs-2'
