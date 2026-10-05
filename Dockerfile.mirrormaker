@@ -1,18 +1,12 @@
 FROM confluentinc/cp-kafka:7.5.0
 
-# Install MirrorMaker 2 and required dependencies
-RUN apt-get update && \
-    apt-get install -y confluent-kafka && \
-    apt-get install -y confluent-kafka-connect-mirror && \
-    rm -rf /var/lib/apt/lists/*
+# Install MirrorMaker 2 - using apk (Alpine package manager)
+RUN apk add --no-cache bash curl
 
 # Copy configuration files
 COPY mm2.properties /etc/kafka/mm2.properties
 COPY source-cluster.properties /etc/kafka/source-cluster.properties
 COPY target-cluster.properties /etc/kafka/target-cluster.properties
 
-# Ensure the script exists and is executable
-RUN which connect-mirror-maker.sh || echo "Script not found, will use alternative"
-
 # Run MirrorMaker
-CMD ["sh", "-c", "connect-mirror-maker.sh /etc/kafka/mm2.properties"]
+CMD ["bash", "-c", "connect-mirror-maker.sh /etc/kafka/mm2.properties"]
