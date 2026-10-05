@@ -5,7 +5,7 @@ COPY mm2.properties /etc/kafka/mm2.properties
 COPY source-cluster.properties /etc/kafka/source-cluster.properties
 COPY target-cluster.properties /etc/kafka/target-cluster.properties
 
-# The MirrorMaker script should be available in the base Kafka image
-# Run MirrorMaker with the configuration file
-ENTRYPOINT ["connect-mirror-maker.sh"]
-CMD ["/etc/kafka/mm2.properties"]
+# Use the full path to the MirrorMaker script
+# The script is typically located in /usr/bin or /bin in the Confluent image
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["/usr/bin/connect-mirror-maker.sh /etc/kafka/mm2.properties"]
