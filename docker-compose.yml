@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:9093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      CLUSTER_ID: 'MkwNYQ3MQ6e-bXrHc44IJw'
+      KAFKA_KRAFT_MODE: 'true'
+    networks:
+      - bess-network
+
+  kafka-2:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka-2
+    container_name: kafka-2
+    ports:
+      - "9094:9092"
+      - "9095:9093"
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:9094'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '2@kafka-2:9093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka-2:29092,CONTROLLER://kafka-2:9093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs-2'
+      CLUSTER_ID: 'NkwNYQ3MQ6e-bXrHc44IJx'
+      KAFKA_KRAFT_MODE: 'true'
+    networks:
+      - bess-network
+
+  bess-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bess-producer
+    depends_on:
+      - kafka
+    networks:
+      - bess-network
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    restart: unless-stopped
+
+  mirrormaker:
+    build:
+      context: .
+      dockerfile: Dockerfile.mirrormaker
+    container_name: mirrormaker
+    depends_on:
+      - kafka
+      - kafka-2
+    networks:
+      - bess-network
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms256M"
+    restart: unless-stopped
+
+networks:
+  bess-network:
+    driver: bridge
