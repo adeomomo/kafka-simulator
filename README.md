@@ -1,41 +1,53 @@
-# BESS Kafka Producer
+# Kafka Simulator - BESS Producer with MirrorMaker
 
-A Docker-based simulator that produces realistic Battery Energy Storage System (BESS) sensor data to Apache Kafka. Simulates 30 BESS units generating voltage, current, temperature, and state of charge (SOC) data every 5 seconds.
+A comprehensive Docker-based setup that simulates Battery Energy Storage System (BESS) sensor data production to Apache Kafka with **multi-cluster replication** using Kafka MirrorMaker. This project demonstrates modern Kafka architecture with KRaft mode, data mirroring, and realistic sensor simulation.
 
-## Overview
+## Features
 
-This project demonstrates:
-- **KRaft Mode Kafka**: Modern Kafka deployment without Zookeeper
-- **Python Kafka Producer**: Simulates multiple BESS units
-- **Docker Compose**: Easy containerization and orchestration
-- **Realistic Data**: Voltage (200-600V), Current (-100 to +100A), Temperature (15-45°C), SOC (0-100%)
-
-## Prerequisites
-
-- **Docker Desktop for Mac** (or Docker Engine on Linux)
-- Ensure Docker is running before starting containers
+- **Dual Kafka Clusters (KRaft Mode)**: Source and target clusters running in Kraft mode without Zookeeper
+- **BESS Producer**: Simulates 30 Battery Energy Storage units generating realistic sensor data
+- **Kafka MirrorMaker 2.0**: Automatic topic and data replication from source to target cluster
+- **Docker Compose**: Complete multi-container orchestration
+- **Realistic Sensor Data**: Voltage (200-600V), Current (-100 to +100A), Temperature (15-45°C), SOC (0-100%)
 
 ## Project Structure
 
 ```
-your-project-directory/
-├── docker-compose.yml      # Kafka + Producer configuration
-├── Dockerfile              # Python producer container definition
-├── bess_producer.py        # Main producer script
-└── README.md               # This file
+kafka-simulator/
+├── docker-compose.yml              # Main Kafka clusters + services configuration
+├── Dockerfile                       # BESS Producer container definition
+├── Dockerfile.mirrormaker           # Kafka MirrorMaker container definition
+├── bess_producer.py                 # BESS data producer script
+├── mm2.properties                   # MirrorMaker configuration
+├── source-cluster.properties        # Source cluster configuration
+├── target-cluster.properties        # Target cluster configuration
+├── connect-log4j.properties         # Logging configuration for connectors
+├── docker-compose.yaml.original     # Backup of original compose file
+├── restart.sh                       # Utility script to restart services
+└── README.md                        # This file
 ```
+
+## Prerequisites
+
+- **Docker Desktop** (Mac/Windows) or **Docker Engine** (Linux)
+- **Docker Compose** v1.29+
+- Ensure Docker daemon is running before starting containers
 
 ## Quick Start
 
-### 1. Start All Services in Background
+### 1. Start All Services
 
 ```bash
 docker compose up -d
 ```
 
-The `-d` flag starts services in detached mode (runs in background).
+This starts:
+- **kafka**: Source cluster (ports 9092, 9093)
+- **kafka-2**: Target cluster (ports 9094, 9095)
+- **bess-producer**: BESS data producer
+- **mirrormaker**: Replicates data from source to target cluster
 
-### 2. Verify Services Are Running
+### 2. Verify All Services Are Running
 
 ```bash
 docker compose ps
@@ -45,18 +57,16 @@ Expected output:
 ```
 NAME                COMMAND                  SERVICE             STATUS
 kafka               "/etc/confluent/dock…"   kafka               Up 2 seconds
+kafka-2             "/etc/confluent/dock…"   kafka-2             Up 2 seconds
 bess-producer       "python bess_producer…"  bess-producer       Up 1 second
+mirrormaker         "/etc/confluent/dock…"   mirrormaker         Up 1 second
 ```
 
 ### 3. View Producer Logs
 
-View logs in real-time without attaching to the container:
-
 ```bash
 docker compose logs -f bess-producer
 ```
-
-Press `Ctrl+C` to stop viewing logs (container keeps running).
 
 Sample output:
 ```
@@ -64,18 +74,25 @@ Sample output:
 2026-10-05 14:23:45,456 - INFO - Successfully connected to Kafka at kafka:29092
 2026-10-05 14:23:45,789 - INFO - Sent message for BESS-001: V=450.75V, I=32.45A, T=28.30°C, SOC=85.50%
 2026-10-05 14:23:45,890 - INFO - Sent message for BESS-002: V=380.20V, I=-15.60A, T=22.15°C, SOC=92.30%
-...
 ```
 
-### 4. Consume Messages from Kafka
+### 4. Consume Messages from Source Cluster
 
-In another terminal, view all messages being produced:
+View messages being produced to the source cluster:
 
 ```bash
 docker compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic bess-data --from-beginning
 ```
 
-Sample message output:
+### 5. Consume Messages from Target Cluster (Mirrored)
+
+View replicated messages on the target cluster:
+
+```bash
+docker compose exec kafka-2 kafka-console-consumer --bootstrap-server localhost:9094 --topic bess-data --from-beginning
+```
+
+Sample message format:
 ```json
 {
   "id": "BESS-001",
@@ -85,93 +102,112 @@ Sample message output:
   "temperature_c": 28.30,
   "soc_percent": 85.50
 }
-{
-  "id": "BESS-002",
-  "timestamp": "2026-10-05T14:23:45.234567Z",
-  "voltage_v": 380.20,
-  "current_a": -15.60,
-  "temperature_c": 22.15,
-  "soc_percent": 92.30
-}
 ```
 
-Press `Ctrl+C` to stop consuming.
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Docker Network (bess-network)            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────────┐          ┌──────────────────────┐ │
+│  │  Kafka Source        │          │  Kafka Target        │ │
+│  │  (KRaft Mode)        │          │  (KRaft Mode)        │ │
+│  │  - 9092 (ext)        │          │  - 9094 (ext)        │ │
+│  │  - 29092 (int)       │          │  - 29092 (int)       │ │
+│  └──────────────────────┘          └──────────────────────┘ │
+│           ▲                                 ▲                │
+│           │                                 │                │
+│      (produces)                        (replicates)         │
+│           │                                 │                │
+│           │                          ┌──────────────┐        │
+│           └──────────────────────────│ MirrorMaker  │        │
+│                                      │  (mm2)       │        │
+│                                      └──────────────┘        │
+│           │                                                  │
+│  ┌────────┴─────────────┐                                   │
+│  │  BESS Producer       │                                   │
+│  │  - 30 units          │                                   │
+│  │  - Every 5 seconds   │                                   │
+│  └──────────────────────┘                                   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ├─ Source: localhost:9092 (accessible from host)
+        └─ Target: localhost:9094 (accessible from host)
+```
 
 ## Common Commands
 
 ### View Kafka Logs
 
 ```bash
+# Source cluster
 docker compose logs -f kafka
-```
 
-### View All Logs
+# Target cluster
+docker compose logs -f kafka-2
 
-```bash
+# MirrorMaker
+docker compose logs -f mirrormaker
+
+# All services
 docker compose logs -f
 ```
 
-Press `Ctrl+C` to stop viewing.
-
-### List Kafka Topics
+### Kafka Topic Management
 
 ```bash
+# List topics on source cluster
 docker compose exec kafka kafka-topics --list --bootstrap-server localhost:9092
-```
 
-### Create a New Topic (Optional)
-
-```bash
-docker compose exec kafka kafka-topics --create --topic my-topic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
-```
-
-### Describe the BESS Data Topic
-
-```bash
+# Describe bess-data topic on source
 docker compose exec kafka kafka-topics --describe --topic bess-data --bootstrap-server localhost:9092
+
+# Check topics on target cluster (should be mirrored)
+docker compose exec kafka-2 kafka-topics --list --bootstrap-server localhost:9094
+
+# Create a test topic (optional)
+docker compose exec kafka kafka-topics --create --topic test-topic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
 ```
 
-### Stop Services (Keep Containers)
+### Service Management
 
 ```bash
+# Stop services (keep containers and data)
 docker compose stop
-```
 
-### Restart Services
-
-```bash
+# Restart services
 docker compose start
-```
 
-### Stop and Remove All Containers
-
-```bash
+# Stop and remove all containers
 docker compose down
-```
 
-### Remove All Data and Start Fresh
-
-```bash
+# Remove all data and start fresh
 docker compose down -v
 docker compose up -d
+
+# Restart using the provided script
+bash restart.sh
 ```
 
-## Message Format
+## BESS Data Format
 
-Each BESS message contains:
+Each message produced contains the following fields:
 
 ```json
 {
-  "id": "BESS-001",              // Unit ID (BESS-001 to BESS-030)
-  "timestamp": "2026-10-05T14:23:45.123456Z",  // ISO 8601 UTC timestamp
-  "voltage_v": 450.75,           // Voltage in volts (200-600V)
-  "current_a": 32.45,            // Current in amps (-100 to +100A)
-  "temperature_c": 28.30,        // Temperature in Celsius (15-45°C)
-  "soc_percent": 85.50           // State of Charge (0-100%)
+  "id": "BESS-001",                              // Unit ID (BESS-001 to BESS-030)
+  "timestamp": "2026-10-05T14:23:45.123456Z",   // ISO 8601 UTC timestamp
+  "voltage_v": 450.75,                           // Voltage in volts (200-600V)
+  "current_a": 32.45,                            // Current in amps (-100 to +100A)
+  "temperature_c": 28.30,                        // Temperature in Celsius (15-45°C)
+  "soc_percent": 85.50                           // State of Charge (0-100%)
 }
 ```
 
-### Field Descriptions
+### Field Reference
 
 | Field | Range | Description |
 |-------|-------|-------------|
@@ -184,140 +220,146 @@ Each BESS message contains:
 
 ## Configuration
 
-### Message Frequency
+### Producer Settings
 
-To change how often messages are produced, edit `bess_producer.py`:
+Edit `bess_producer.py` to modify:
 
 ```python
-# Default: 5 seconds
-producer.start_producing(interval_seconds=5)
+# Number of BESS units to simulate
+producer = BESSProducer(bootstrap_servers='kafka:29092', num_units=30)
 
-# Change to 10 seconds
-producer.start_producing(interval_seconds=10)
+# Message frequency (in seconds)
+producer.start_producing(interval_seconds=5)
 ```
 
-Rebuild the container:
+Rebuild the container after changes:
 ```bash
 docker compose up -d --build
 ```
 
-### Number of BESS Units
+### MirrorMaker Configuration
 
-To change the number of simulated units, edit `docker-compose.yml`:
+Edit `mm2.properties` to modify replication settings:
 
-```yaml
-bess-producer:
-  # Change environment variable
-  environment:
-    NUM_BESS_UNITS: 50  # Default is 30
+```ini
+# Source and target clusters
+source.bootstrap.servers = kafka:29092
+target.bootstrap.servers = kafka-2:29092
+
+# Topics to replicate (comma-separated)
+source->target.topics = bess-data
+
+# Replication factor for internal topics
+source->target.checkpoints.topic.replication.factor = 1
+source->target.heartbeats.topic.replication.factor = 1
 ```
 
-Or edit `bess_producer.py`:
+### Kafka Cluster Configuration
 
-```python
-# Default: 30 units
-producer = BESSProducer(bootstrap_servers='kafka:29092', num_units=50)
-```
-
-### Kafka Broker Address
-
-The producer connects to Kafka at `kafka:29092` (internal Docker network).
-To connect from outside Docker, use `localhost:9092`.
+The docker-compose.yml defines:
+- **Source Cluster (kafka)**: Ports 9092/29092, Node ID 1
+- **Target Cluster (kafka-2)**: Ports 9094/29092, Node ID 2
+- **KRaft Mode**: No Zookeeper required
+- **Network**: Internal Docker network `bess-network`
 
 ## Troubleshooting
 
-### Producer not connecting to Kafka
+### Services Not Starting
 
 ```bash
-# Check if Kafka is running
+# Check service status
 docker compose ps
 
-# View Kafka logs
-docker compose logs kafka
+# View error logs
+docker compose logs
 
-# Ensure Kafka is fully started (may take 5-10 seconds)
+# Restart all services
+docker compose restart
 ```
 
-### No messages in topic
+### Producer Not Connecting to Kafka
+
+```bash
+# Check if Kafka is ready (wait 10-15 seconds)
+docker compose logs kafka | grep "started"
+
+# Verify network connectivity
+docker compose exec bess-producer ping kafka
+
+# Check Kafka bootstrap configuration
+docker compose exec kafka kafka-broker-api-versions --bootstrap-server kafka:29092
+```
+
+### No Messages in Topic
 
 ```bash
 # Check if topic was created
-docker compose exec kafka kafka-topics --list --bootstrap-server localhost:9092
+docker compose exec kafka kafka-topics --list --bootstrap-server kafka:29092
 
-# Check topic details
-docker compose exec kafka kafka-topics --describe --topic bess-data --bootstrap-server localhost:9092
+# View topic details
+docker compose exec kafka kafka-topics --describe --topic bess-data --bootstrap-server kafka:29092
+
+# Check producer logs for errors
+docker compose logs bess-producer
 ```
 
-### Container keeps restarting
+### MirrorMaker Not Replicating
 
 ```bash
-docker compose logs bess-producer
+# Check MirrorMaker status and logs
+docker compose logs mirrormaker
 
-# Restart the service
-docker compose restart bess-producer
+# Verify source topic exists
+docker compose exec kafka kafka-topics --list --bootstrap-server kafka:29092
+
+# Verify target cluster is accessible
+docker compose exec mirrormaker ping kafka-2
 ```
 
-### How to Detach from Container
+### Port Conflicts
 
-If you're viewing logs with `docker compose logs -f`:
-- Press `Ctrl+C` to stop viewing (container keeps running)
+If ports are already in use:
+1. Stop conflicting services: `docker compose down`
+2. Modify ports in `docker-compose.yml`
+3. Restart: `docker compose up -d`
 
-If you're in an interactive shell with `docker compose exec`:
-- Press `Ctrl+P` then `Ctrl+Q` (container keeps running)
+## Performance Characteristics
 
-## Architecture
+- **Message Rate**: 30 units × 1 message per 5 seconds = **6 messages/sec** (configurable)
+- **Message Size**: ~150 bytes per message
+- **Partitions**: 3 (configurable in producer)
+- **Replication Factor**: 1 (single broker per cluster)
+- **Consumer Lag**: Near real-time from source to target via MirrorMaker
 
-```
-┌─────────────────────────────────────────┐
-│        Docker Network (bess-network)    │
-├─────────────────────────────────────────┤
-│                                         │
-│  ┌─────────────────────────────┐       │
-│  │   Kafka (KRaft Mode)        │       │
-│  │   - Port: 9092 (external)   │       │
-│  │   - Port: 29092 (internal)  │       │
-│  └─────────────────────────────┘       │
-│           ↑                             │
-│           │ (produces to)              │
-│           │                             │
-│  ┌─────────────────────────────┐       │
-│  │   BESS Producer             │       │
-│  │   - Simulates 30 units      │       │
-│  │   - Sends every 5 seconds   │       │
-│  └─────────────────────────────┘       │
-│                                         │
-└─────────────────────────────────────────┘
-         │
-         │ (accessible from host)
-         ├─ localhost:9092 (Kafka)
-```
+### For Production Use
+
+- Use multiple Kafka brokers per cluster
+- Increase replication factor (typically 3)
+- Enable SSL/TLS encryption
+- Configure persistent volumes
+- Add monitoring (Prometheus/Grafana)
+- Implement proper security policies
 
 ## Technologies
 
-- **Kafka 7.5.0** - Event streaming platform (KRaft mode)
-- **Python 3.11** - Producer application
-- **kafka-python** - Python Kafka client library
-- **Docker** - Containerization
-- **Docker Compose** - Multi-container orchestration
-
-## Performance Notes
-
-- **Message Volume**: 30 units × 1 message per 5 seconds = 6 messages/sec
-- **Kafka Partitions**: 3 (can be adjusted)
-- **Replication Factor**: 1 (single broker)
-
-For production, consider:
-- Multiple Kafka brokers
-- Higher replication factor
-- Persistent volumes
-- Monitoring and alerting
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| **Kafka** | 7.5.0 | Event streaming platform (Confluent) |
+| **KRaft Mode** | - | Kafka Raft consensus (no Zookeeper) |
+| **MirrorMaker 2.0** | 7.5.0 | Multi-cluster replication |
+| **Python** | 3.11 | Producer application |
+| **kafka-python** | Latest | Python Kafka client library |
+| **Docker** | Latest | Containerization |
+| **Docker Compose** | v1.29+ | Orchestration |
 
 ## Next Steps
 
-1. **Build a Consumer**: Create a service that consumes BESS data and stores it in a database
-2. **Add Monitoring**: Use Prometheus/Grafana to visualize BESS metrics
-3. **Real Data**: Replace random data with real sensor connections
+1. **Build a Consumer Service**: Create a service that consumes from target cluster and stores data
+2. **Add Monitoring**: Integrate Prometheus/Grafana for metrics visualization
+3. **Implement Real Data**: Replace random simulation with actual sensor data
 4. **Scale Up**: Add more BESS units or multiple producer instances
+5. **Multi-Region**: Deploy target clusters in different regions
+6. **Data Pipeline**: Add stream processing (Kafka Streams, Flink, or Spark)
 
 ## License
 
@@ -325,7 +367,24 @@ MIT
 
 ## Support
 
-For issues or questions, check:
-- Kafka logs: `docker compose logs kafka`
-- Producer logs: `docker compose logs bess-producer`
-- Docker status: `docker compose ps`
+For issues, check:
+
+```bash
+# Producer logs
+docker compose logs bess-producer
+
+# Source Kafka logs
+docker compose logs kafka
+
+# Target Kafka logs
+docker compose logs kafka-2
+
+# MirrorMaker logs
+docker compose logs mirrormaker
+
+# Service status
+docker compose ps
+
+# System status
+docker stats
+```
